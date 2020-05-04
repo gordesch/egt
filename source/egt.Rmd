@@ -1,0 +1,120 @@
+---
+title: "Exploitation de l'EGT 2010"
+author: "Cantien Collinet"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Préparation du traitement
+Installation des librairies et importation des données
+```{r results='hide', message=FALSE}
+library(tidyverse)
+library(haven)
+library(viridis)
+
+menages <- read_sas("../data/men2010.sas7bdat")
+individus <- read_sas("../data/ind2010.sas7bdat")
+deplacements <- read_sas("../data/dplct2010.sas7bdat")
+trajets <- read_sas("../data/trajet2010.sas7bdat")
+```
+
+# Exploration du jeu de données
+
+Nombre de déplacements par jour et par personne
+```{r}
+deplacements_jour_personne <- deplacements %>%
+  group_by(NQUEST, NP, JDEP) %>%
+  count %>%
+  group_by(JDEP) %>%
+  summarise(mean_nb_deplacements = mean(n, na.rm = TRUE))
+```
+```{r, echo=FALSE}
+knitr::kable(deplacements_jour_personne, digits = 2, caption = "Déplacements par jour et par personne")
+```
+
+```{r}
+CS24L_52 <- individus %>%
+  filter(CS24L == 56) %>%
+  count(SEXE)
+```
+```{r, echo=FALSE}
+knitr::kable(CS24L_52, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
+```
+
+Nombre de déplacements quotidiens par personne
+```{r}
+deplacements_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(mean_nb_deplacements = mean(n))
+```
+
+Distance quotidienne parcourue par personne
+```{r}
+distance_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(distance = sum(DPORTEE)) %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(mean_distance_parcourue = mean(distance, na.rm = TRUE))
+```
+
+Temps de déplacement quotidien par personne
+```{r}
+temps_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(mean_duree_passee = mean(temps, na.rm = TRUE))
+```
+
+Nombre quotidiens de déplacements retour au domicile par personne
+```{r}
+retours_domicile_quotid_personne <- deplacements %>%
+  filter(DESTMOT_IAURIF02 == 7) %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(mean_nb_retours_domicile = mean(n))
+```
+
+Récapitulatif par CS8
+```{r}
+recapitulatif <- deplacements_quotid_personne %>%
+  left_join(distance_quotid_personne, by = c("CS8")) %>%
+  left_join(temps_quotid_personne, by = c("CS8")) %>%
+  left_join(retours_domicile_quotid_personne, by = c("CS8"))
+```
+```{r, echo=FALSE}
+knitr::kable(recapitulatif, digits = 2, caption = "Mobilité quotidienne en IDF par PCS de niveau 1")
+```
+
+Distribution des temps de déplacements par jour et par personne
+```{r}
+temps_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8)
+
+ggplot(temps_quotid_personne, aes(x = 1, y = temps, color = CS8)) +
+  scale_color_viridis() +
+  facet_grid(cols = vars(CS8)) +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 350)) +
+  ggtitle("Distribution de la durée quotidienne des déplacements par personne") +
+  ylab("Temps quotidien alloué aux déplacements (en min)") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+```
