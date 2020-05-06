@@ -24,6 +24,16 @@ menages <- read_sas("../data/men2010.sas7bdat")
 individus <- read_sas("../data/ind2010.sas7bdat")
 deplacements <- read_sas("../data/dplct2010.sas7bdat")
 trajets <- read_sas("../data/trajet2010.sas7bdat")
+
+# Recode to factors, except a few columns
+menages <- menages %>%
+  mutate_at(vars(-POIDSM, -MNP, -MNP5, -MNPMOB, -MNPACT, -LOY_HC, -CHG, -LOY_PARK, -NBPI, -SURF, -ANEM, -MNEM, -NB_VELO, -NB_VAE, -NB_2RM, -NB_VEH, -ANKMRM1, -ANKMV1, -CPTKMV1, -ANKMV2, -CPTKMV2, -ANKMV3, -CPTKMV3, -ANKMV4, -CPTKMV4), factor)
+individus <- individus %>%
+  mutate_at(vars(-POIDSP, -AGE, -NBDEPL, -NBDEPLVP, -NBDEPLVPC, -NBDEPLTC, -NBDEPLVELO, -NBDEPL2RM, -NBDEPLMAP, -DDOMTRAV), factor)
+deplacements <- deplacements %>%
+  mutate_at(vars(-POIDSP, -DPORTEE, -DUREE, -NBTRAJ, -NBTRAJVP, -NBTRAJVPC, -NBTRAJTC, -NBTRAJVELO, -NBTRAJ2RM, -NBCO), factor)
+trajets <- trajets %>%
+  mutate_at(vars(-POIDSP, -TPORTEE), factor)
 ```
 
 # Exploration du jeu de données
@@ -31,12 +41,13 @@ trajets <- read_sas("../data/trajet2010.sas7bdat")
 ## PCS 56, répartition par sexe
 
 ```{r}
-CS24L_52 <- individus %>%
+CS24L_56 <- individus %>%
   filter(CS24L == 56) %>%
+  mutate(SEXE = as.factor(SEXE)) %>%
   count(SEXE)
 ```
 ```{r, echo=FALSE}
-knitr::kable(CS24L_52, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
+knitr::kable(CS24L_56, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
 ```
 
 ## Nombre de déplacements par jour et par personne
