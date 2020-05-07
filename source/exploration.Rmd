@@ -1,0 +1,196 @@
+---
+title: "Exploration du jeu de données"
+author: "Cantien Collinet"
+date: "5/7/2020"
+output: pdf_document
+---
+
+## PCS 56, répartition par sexe
+
+```{r}
+CS24L_56 <- individus %>%
+  filter(CS24L == 56) %>%
+  mutate(SEXE = as.factor(SEXE)) %>%
+  count(SEXE)
+```
+```{r, echo=FALSE}
+knitr::kable(CS24L_56, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
+```
+
+## Nombre de déplacements par jour et par personne
+
+```{r}
+deplacements_jour_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(n = replace_na(n, 0)) %>%
+  group_by(JDEP) %>%
+  summarise(w_mean_nb_deplacements = weighted.mean(n, POIDSP))
+```
+```{r, echo=FALSE}
+knitr::kable(deplacements_jour_personne, digits = 2, caption = "Déplacements par jour et par personne")
+```
+
+## Nombre de déplacements quotidiens par personne
+
+```{r}
+deplacements_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(n = replace_na(n, 0)) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(w_mean_nb_deplacements = weighted.mean(n, POIDSP))
+```
+```{r, echo=FALSE}
+knitr::kable(deplacements_quotid_personne, digits = 2, caption = "Nombre de déplacements quotidiens en IDF par PCS de niveau 1")
+```
+
+## Distance quotidienne parcourue par personne
+
+```{r}
+distance_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(distance = sum(DPORTEE)) %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(distance = replace_na(distance, 0)) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(w_mean_distance_parcourue = weighted.mean(distance, POIDSP))
+```
+```{r, echo=FALSE}
+knitr::kable(distance_quotid_personne, digits = 2, caption = "Distance quotidienne parcourue en IDF par PCS de niveau 1")
+```
+
+## Temps de déplacement quotidien par personne
+
+```{r}
+temps_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(temps = replace_na(temps, 0)) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(w_mean_duree_passee_en_min = weighted.mean(temps, POIDSP))
+```
+```{r, echo=FALSE}
+knitr::kable(temps_quotid_personne, digits = 2, caption = "Temps de déplacement quotidien en IDF par PCS de niveau 1")
+```
+
+## Vitesse
+```{r}
+vitesse <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(distance = sum(DPORTEE), temps = sum(DUREE)) %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(
+    # na.rm = TRUE pour ne pas comptabiliser ceux qui ne se déplacent pas
+    w_mean_distance_parcourue = weighted.mean(distance, POIDSP, na.rm = TRUE),
+    w_mean_duree_passee_en_min = weighted.mean(temps, POIDSP, na.rm = TRUE)
+  ) %>%
+  mutate(vitesse_en_kmh = w_mean_distance_parcourue / w_mean_duree_passee_en_min * 60) %>%
+  select(CS8, vitesse_en_kmh)
+```
+```{r, echo=FALSE}
+knitr::kable(vitesse, digits = 2, caption = "Vitesse des déplacements en IDF par PCS de niveau 1")
+```
+
+## Calcul du nombre quotidiens de déplacements retour au domicile par personne
+```{r}
+retours_domicile_quotid_personne <- deplacements %>%
+  filter(DESTMOT_IAURIF02 == 7) %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(n = replace_na(n, 0)) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8) %>%
+  summarise(w_mean_nb_retours_domicile = weighted.mean(n, POIDSP))
+```
+```{r, echo=FALSE}
+knitr::kable(retours_domicile_quotid_personne, digits = 2, caption = "Retours quotidiens au domicile en IDF par PCS de niveau 1")
+```
+
+## Récapitulatif par CS8
+
+```{r}
+recapitulatif <- deplacements_quotid_personne %>%
+  left_join(distance_quotid_personne, by = c("CS8")) %>%
+  left_join(temps_quotid_personne, by = c("CS8")) %>%
+  left_join(vitesse, by = c("CS8")) %>%
+  left_join(retours_domicile_quotid_personne, by = c("CS8"))
+  
+```
+```{r, echo=FALSE}
+recapitulatif <- recapitulatif %>%
+  rename(
+    nb_deplacements = w_mean_nb_deplacements,
+    distance_parcourue = w_mean_distance_parcourue,
+    duree_passee_en_min = w_mean_duree_passee_en_min,
+    nb_retours_domicile = w_mean_nb_retours_domicile,
+  )
+knitr::kable(recapitulatif, digits = 2, caption = "Mobilité quotidienne en IDF par PCS de niveau 1")
+```
+
+## Personnes où la CS8 est non renseignée
+
+```{r}
+CS8_non_renseignee <- individus %>%
+  mutate(CS8 = if_else(is.na(CS8), "undefined", "defined"))
+```
+```{r}
+CS8_non_renseignee_age <- CS8_non_renseignee %>%
+  filter(CS8 == "undefined") %>%
+  group_by(AGE) %>%
+  count
+```
+```{r, echo=FALSE}
+knitr::kable(CS8_non_renseignee_age, caption = "Personnes dont la CS8 n'est pas renseignée, par âge")
+```
+```{r}
+ggplot(CS8_non_renseignee) +
+  geom_bar(aes(x = AGE, fill = CS8), stat = "count", position = "stack")
+```
+```{r}
+CAT_des_CS8_non_renseignee <- CS8_non_renseignee %>%
+  filter(CS8 == "undefined", AGE >= 15) %>%
+  group_by(CAT) %>%
+  count
+```
+```{r, echo=FALSE}
+knitr::kable(CAT_des_CS8_non_renseignee, caption = "15+ ans dont la CS8 n'est pas renseignée, par catégorie de personne")
+```
+```{r}
+CAT_simplifiee_des_CS8_non_renseignee <- CS8_non_renseignee %>%
+  filter(CS8 == "undefined", AGE >= 15) %>%
+  mutate(CAT = if_else(CAT %in% c(10:15, 25:30), "actifs occupes", "autres")) %>%
+  group_by(CAT) %>%
+  count
+```
+```{r, echo=FALSE}
+knitr::kable(CAT_simplifiee_des_CS8_non_renseignee, caption = "15+ ans dont la CS8 n'est pas renseignée, répartition entre actifs occupés et les autres")
+```
+
+## Distribution des temps de déplacements par jour et par personne
+
+```{r}
+temps_quotid_personne <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  left_join(individus, by = c("NQUEST", "NP")) %>%
+  filter(!is.na(CS8)) %>%
+  group_by(CS8)
+
+ggplot(temps_quotid_personne, aes(x = 1, y = temps, color = CS8)) +
+  facet_grid(cols = vars(CS8)) +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 350)) +
+  ggtitle("Distribution de la durée quotidienne des déplacements par personne") +
+  ylab("Temps quotidien alloué aux déplacements (en min)") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
