@@ -1,0 +1,77 @@
+---
+title: "Modèle logistique"
+author: "Cantien Collinet"
+---
+
+# Qui sont les membres de la PCS 56 ?
+
+## Lien à la personne de référence
+```{r}
+ALL_LIENPREF <- individus %>%
+  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
+  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
+  group_by(LIENPREF) %>%
+  count
+
+PCS56_LIENPREF <- individus %>%
+  filter(CS24L == 56) %>%
+  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
+  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
+  group_by(LIENPREF) %>%
+  count
+
+lienpref <- ALL_LIENPREF %>% full_join(PCS56_LIENPREF, by = c("LIENPREF"), suffix = c(" all", " pcs_56"))
+```
+```{r, echo=FALSE}
+knitr::kable(lienpref, caption = "Lien à la personne de référence")
+```
+
+## Modèle logistique BINAIRE
+
+### Préparation
+
+```{r}
+library(survey)
+library(gtsummary)
+library(forestmodel)
+  
+individus_pere_mere_for_regression <- individus_for_regression %>%
+  # On ne garde que les pères et mères
+  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
+  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
+  filter(LIENPREF == "pere-mere")
+```
+
+### Régression
+```{r}
+weighted_individus_pere_mere_for_regression <- svydesign(ids = ~1,
+  data = individus_pere_mere_for_regression, weights = ~POIDSP)
+
+reg_pere_mere <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
+  weighted_individus_pere_mere_for_regression, family = quasibinomial())
+
+weighted_individus_for_regression <- svydesign(ids = ~1,
+  data = individus_for_regression, weights = ~POIDSP)
+
+reg <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
+  weighted_individus_for_regression, family = quasibinomial())
+
+```
+
+### Tous les individus
+```{r}
+tbl_regression(reg, exponentiate = TRUE)
+```
+```{r}
+forest_model(reg)
+```
+
+### Que les pères et mères
+
+```{r}
+tbl_regression(reg_pere_mere, exponentiate = TRUE)
+```
+```{r}
+forest_model(reg_pere_mere)
+```
+

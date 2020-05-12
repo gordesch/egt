@@ -1,8 +1,6 @@
 ---
 title: "Exploration du jeu de données"
 author: "Cantien Collinet"
-date: "5/7/2020"
-output: pdf_document
 ---
 
 ## PCS 56, répartition par sexe

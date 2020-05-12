@@ -44,114 +44,16 @@ trajets <- trajets %>%
 ```
 -->
 
-# Qui sont les membres de la PCS 56 ?
+<!--
+# Préparation pour le modèle logistique
 
-## Lien à la personne de référence
-```{r}
-ALL_LIENPREF <- individus %>%
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  group_by(LIENPREF) %>%
-  count
-
-PCS56_LIENPREF <- individus %>%
-  filter(CS24L == 56) %>%
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  group_by(LIENPREF) %>%
-  count
-
-lienpref <- ALL_LIENPREF %>% full_join(PCS56_LIENPREF, by = c("LIENPREF"), suffix = c(" all", " pcs_56"))
+```{r, child=c('logistique.Rmd')}
 ```
-```{r, echo=FALSE}
-knitr::kable(lienpref, caption = "Lien à la personne de référence")
+-->
+
+<!--
+# Modèle logistique 1
+
+```{r, child=c('logistique.Rmd')}
 ```
-
-## Modèle logistique
-
-### Préparation
-
-```{r}
-library(survey)
-library(gtsummary)
-library(forestmodel)
-
-prepare_individus_for_regression <- function (data) {
-  data <- data %>%
-    # Variable "is_PCS56"
-    mutate(is_PCS56 = (CS24L == 56) & (!is.na(CS24L))) %>%
-    # Adapation des sexes
-    mutate(SEXE = fct_recode(SEXE, "Homme" = "1", "Femme" = "2")) %>%
-    # 15 ans et plus, adapatation des tranches d'âge
-    filter(AGE >= 15) %>%
-    mutate(TRAGE = fct_drop(TRAGE)) %>%
-    mutate(TRAGE = fct_recode(TRAGE, "[15;24]" = "2", "[25;34]" = "3", "[35;44]" = "4", "[45;54]" = "5", "[55;64]" = "6", "[65;74]" = "7")) %>%
-    # Simplification des niveaux de diplôme et modalité de référence = bac
-    mutate(DIPL = fct_explicit_na(DIPL)) %>%
-    mutate(DIPL = fct_collapse(DIPL, "En cours" = c("1", "8"), "Inf. au lycée" = c("0", "2", "3"), "Lycée" = c("4"), "Bac" = c("5"), "Sup. au bac" = c("6", "7", "9"))) %>%
-    mutate(DIPL = fct_relevel(DIPL, "Bac")) %>%
-    # Adapation des lieux de travail
-    mutate(TYPLT = fct_explicit_na(TYPLT)) %>%
-    mutate(TYPLT = fct_recode(TYPLT, "Bureau" = "1", "Commerce, boutique, grandes surfaces" = "2", "Entrepôt, usine, atelier" = "3", "Universités, collèges, lycées" = "4", "Hôpital" = "5", "Aéroports / gares" = "6", "Chez des particuliers" = "7", "Zones spéciales (Rungis, portuaires)" = "8", "Domicile" = "9", "Autres" = "10")) %>%
-    # Adapation de la variabilité des lieux de travail
-    mutate(ULTRAV = fct_explicit_na(ULTRAV)) %>%
-    mutate(ULTRAV = fct_recode(ULTRAV, "Unique, en dehors du domicile" = "1", "Unique, au domicile" = "2", "Pas de lieu fixe" = "3")) %>%
-    # Adaptation de la localisation du lieu de travail
-    mutate(LTRAVCOUR = fct_explicit_na(LTRAVCOUR)) %>%
-    mutate(LTRAVCOUR = fct_recode(LTRAVCOUR, "Paris" = "1", "Petite couronne" = "2", "Grande Couronne" = "3")) %>%
-    # Adapatation du permis de conduire
-    # mutate(PERMVP = fct_explicit_na(PERMVP)) %>% # Commenté car que 1 personne et ça complique la lecture
-    mutate(PERMVP = fct_recode(PERMVP, "Oui" = "1", "Non" = "2", "Conduite accompagnée ou leçons" = "3")) %>%
-    # Adaptation de l'abonnement TC
-    mutate(ABONTC = fct_explicit_na(ABONTC)) %>%
-    mutate(ABONTC = fct_other(ABONTC, keep = "1", other_level = "Oui")) %>%
-    mutate(ABONTC = fct_recode(ABONTC, "Non" = "1")) %>%
-    # Modalité de référence pour la gêne dans les déplacements = oui
-    mutate(HANDI = fct_explicit_na(HANDI)) %>%
-    mutate(HANDI = fct_relevel(HANDI, "2")) %>%
-    mutate(HANDI = fct_recode(HANDI, "Oui" = "1", "Non" = "2"))
-  data
-}
-
-individus_for_regression <- prepare_individus_for_regression(individus)
-  
-individus_pere_mere_for_regression <- individus_for_regression %>%
-  # On ne garde que les pères et mères
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  filter(LIENPREF == "pere-mere")
-```
-
-### Régression
-```{r}
-weighted_individus_pere_mere_for_regression <- svydesign(ids = ~1,
-  data = individus_pere_mere_for_regression, weights = ~POIDSP)
-
-reg_pere_mere <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
-  weighted_individus_pere_mere_for_regression, family = quasibinomial())
-
-weighted_individus_for_regression <- svydesign(ids = ~1,
-  data = individus_for_regression, weights = ~POIDSP)
-
-reg <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
-  weighted_individus_for_regression, family = quasibinomial())
-
-```
-
-### Tous les individus
-```{r}
-tbl_regression(reg, exponentiate = TRUE)
-```
-```{r}
-forest_model(reg)
-```
-
-### Que les pères et mères
-
-```{r}
-tbl_regression(reg_pere_mere, exponentiate = TRUE)
-```
-```{r}
-forest_model(reg_pere_mere)
-```
-
+-->
