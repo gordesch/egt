@@ -1,18 +1,49 @@
 ---
 title: "Exploration du jeu de données"
 author: "Cantien Collinet"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
 ---
+
+# Préparation des données
+Installation des librairies et importation des données
+```{r, setup, results='hide', message=FALSE}
+source("support/preparation.R")
+individus_CS8_short <- individus %>%
+  var_labels(
+    CS8 = "PCS niv. 1"
+  ) %>%
+  val_labels(
+    CS8 = c(
+      "Agri." = "1",
+      "Art." = "2",
+      "CPIS" = "3",
+      "PI" = "4",
+      "Empl." = "5",
+      "Ouvr." = "6",
+      "Retr." = "7",
+      "Autres" = "8"
+    )
+  )
+```
+
+# Exploration
 
 ## PCS 56, répartition par sexe
 
 ```{r}
 CS24L_56 <- individus %>%
   filter(CS24L == 56) %>%
-  mutate(SEXE = as.factor(SEXE)) %>%
   count(SEXE)
 ```
 ```{r, echo=FALSE}
-knitr::kable(CS24L_56, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
+CS24L_56_labelled <- CS24L_56 %>%
+  mutate(SEXE = sjlabelled::as_label(SEXE)) %>%
+  rename("Nombre d'individus" = n) %>%
+  label_to_colnames()
+knitr::kable(CS24L_56_labelled, caption = "Personnels des services directs aux particuliers, nourrices, gens de maison, femmes de ménage : répartition par sexe")
 ```
 
 ## Nombre de déplacements par jour et par personne
@@ -22,12 +53,16 @@ deplacements_jour_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   count %>%
   right_join(individus, by = c("NQUEST", "NP")) %>%
-  mutate(n = replace_na(n, 0)) %>%
+  mutate(n = tidyr::replace_na(n, 0)) %>%
   group_by(JDEP) %>%
   summarise(w_mean_nb_deplacements = weighted.mean(n, POIDSP))
 ```
 ```{r, echo=FALSE}
-knitr::kable(deplacements_jour_personne, digits = 2, caption = "Déplacements par jour et par personne")
+deplacements_jour_personne_labelled <- deplacements_jour_personne %>%
+  mutate(JDEP = sjlabelled::as_label(JDEP)) %>%
+  rename('Moyenne individuelle du nombre de déplacements' = w_mean_nb_deplacements) %>%
+  label_to_colnames()
+knitr::kable(deplacements_jour_personne_labelled, digits = 2, caption = "Déplacements par jour et par personne")
 ```
 
 ## Nombre de déplacements quotidiens par personne
@@ -36,14 +71,53 @@ knitr::kable(deplacements_jour_personne, digits = 2, caption = "Déplacements pa
 deplacements_quotid_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   count %>%
-  right_join(individus, by = c("NQUEST", "NP")) %>%
-  mutate(n = replace_na(n, 0)) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(n = tidyr::replace_na(n, 0)) %>%
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(w_mean_nb_deplacements = weighted.mean(n, POIDSP))
 ```
 ```{r, echo=FALSE}
-knitr::kable(deplacements_quotid_personne, digits = 2, caption = "Nombre de déplacements quotidiens en IDF par PCS de niveau 1")
+deplacements_quotid_personne_labelled <- deplacements_quotid_personne %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Moyenne individuelle du nombre de déplacements quotidiens" = w_mean_nb_deplacements) %>%
+  label_to_colnames()
+  
+knitr::kable(deplacements_quotid_personne_labelled, digits = 2, caption = "Nombre de déplacements quotidiens en IDF par PCS de niveau 1")
+```
+
+## Part d'immobiles
+
+```{r}
+immobiles <- deplacements %>%
+  # Nombre de déplacements par personne
+  group_by(NQUEST, NP) %>%
+  count %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  # Personnes avec aucun déplacement
+  mutate(n_deplacements = tidyr::replace_na(n, 0)) %>%
+  mutate(immobile = (n_deplacements == 0)) %>%
+  mutate(immobile = as_factor(immobile)) %>%
+  # Fréquence
+  group_by(CS8, immobile) %>%
+  count(CS8, immobile, wt = POIDSP, .drop=FALSE) %>%
+  group_by(CS8) %>%
+  mutate(freq = n / sum(n)) %>%
+  ungroup() %>%
+  # Immobiles seulement
+  filter(immobile == TRUE, !is.na(CS8)) %>%
+  select(CS8, freq) %>%
+  # En %
+  mutate(freq = freq * 100) %>%
+  rename(freq_immobiles = freq)
+```
+```{r, echo=FALSE}
+immobiles_labelled <- immobiles %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Immobiles (%)" = freq_immobiles) %>%
+  label_to_colnames()
+  
+knitr::kable(immobiles_labelled, digits = 2, caption = "Nombre de déplacements quotidiens en IDF par PCS de niveau 1")
 ```
 
 ## Distance quotidienne parcourue par personne
@@ -52,14 +126,18 @@ knitr::kable(deplacements_quotid_personne, digits = 2, caption = "Nombre de dép
 distance_quotid_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   summarise(distance = sum(DPORTEE)) %>%
-  right_join(individus, by = c("NQUEST", "NP")) %>%
-  mutate(distance = replace_na(distance, 0)) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(distance = tidyr::replace_na(distance, 0)) %>%
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(w_mean_distance_parcourue = weighted.mean(distance, POIDSP))
 ```
 ```{r, echo=FALSE}
-knitr::kable(distance_quotid_personne, digits = 2, caption = "Distance quotidienne parcourue en IDF par PCS de niveau 1")
+distance_quotid_personne_labelled <- distance_quotid_personne %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Distance quotidienne parcourue (km)" = w_mean_distance_parcourue) %>%
+  label_to_colnames()
+knitr::kable(distance_quotid_personne_labelled, digits = 2, caption = "Distance quotidienne parcourue en IDF par PCS de niveau 1")
 ```
 
 ## Temps de déplacement quotidien par personne
@@ -68,14 +146,18 @@ knitr::kable(distance_quotid_personne, digits = 2, caption = "Distance quotidien
 temps_quotid_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   summarise(temps = sum(DUREE)) %>%
-  right_join(individus, by = c("NQUEST", "NP")) %>%
-  mutate(temps = replace_na(temps, 0)) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(temps = tidyr::replace_na(temps, 0)) %>%
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(w_mean_duree_passee_en_min = weighted.mean(temps, POIDSP))
 ```
 ```{r, echo=FALSE}
-knitr::kable(temps_quotid_personne, digits = 2, caption = "Temps de déplacement quotidien en IDF par PCS de niveau 1")
+temps_quotid_personne_labelled <- temps_quotid_personne %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Durée quotidienne de déplacement (min)" = w_mean_duree_passee_en_min) %>%
+  label_to_colnames()
+knitr::kable(temps_quotid_personne_labelled, digits = 0, caption = "Temps de déplacement quotidien en IDF par PCS de niveau 1")
 ```
 
 ## Vitesse
@@ -83,7 +165,7 @@ knitr::kable(temps_quotid_personne, digits = 2, caption = "Temps de déplacement
 vitesse <- deplacements %>%
   group_by(NQUEST, NP) %>%
   summarise(distance = sum(DPORTEE), temps = sum(DUREE)) %>%
-  right_join(individus, by = c("NQUEST", "NP")) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(
@@ -95,7 +177,11 @@ vitesse <- deplacements %>%
   select(CS8, vitesse_en_kmh)
 ```
 ```{r, echo=FALSE}
-knitr::kable(vitesse, digits = 2, caption = "Vitesse des déplacements en IDF par PCS de niveau 1")
+vitesse_labelled <- vitesse %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Vitesse de déplacement (km/h)" = vitesse_en_kmh) %>%
+  label_to_colnames()
+knitr::kable(vitesse_labelled, digits = 2, caption = "Vitesse des déplacements en IDF par PCS de niveau 1")
 ```
 
 ## Calcul du nombre quotidiens de déplacements retour au domicile par personne
@@ -104,14 +190,18 @@ retours_domicile_quotid_personne <- deplacements %>%
   filter(DESTMOT_IAURIF02 == 7) %>%
   group_by(NQUEST, NP) %>%
   count %>%
-  right_join(individus, by = c("NQUEST", "NP")) %>%
-  mutate(n = replace_na(n, 0)) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(n = tidyr::replace_na(n, 0)) %>%
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(w_mean_nb_retours_domicile = weighted.mean(n, POIDSP))
 ```
 ```{r, echo=FALSE}
-knitr::kable(retours_domicile_quotid_personne, digits = 2, caption = "Retours quotidiens au domicile en IDF par PCS de niveau 1")
+retours_domicile_quotid_personne_labelled <- retours_domicile_quotid_personne %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
+  rename("Nombre de retours quotidiens au domicile" = w_mean_nb_retours_domicile) %>%
+  label_to_colnames()
+knitr::kable(retours_domicile_quotid_personne_labelled, digits = 2, caption = "Retours quotidiens au domicile en IDF par PCS de niveau 1")
 ```
 
 ## Récapitulatif par CS8
@@ -121,17 +211,21 @@ recapitulatif <- deplacements_quotid_personne %>%
   left_join(distance_quotid_personne, by = c("CS8")) %>%
   left_join(temps_quotid_personne, by = c("CS8")) %>%
   left_join(vitesse, by = c("CS8")) %>%
-  left_join(retours_domicile_quotid_personne, by = c("CS8"))
-  
+  left_join(retours_domicile_quotid_personne, by = c("CS8")) %>%
+  left_join(immobiles, by = c("CS8"))
 ```
 ```{r, echo=FALSE}
 recapitulatif <- recapitulatif %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE)) %>%
   rename(
-    nb_deplacements = w_mean_nb_deplacements,
-    distance_parcourue = w_mean_distance_parcourue,
-    duree_passee_en_min = w_mean_duree_passee_en_min,
-    nb_retours_domicile = w_mean_nb_retours_domicile,
-  )
+    "Nb dépl." = w_mean_nb_deplacements,
+    "Distance (km)" = w_mean_distance_parcourue,
+    "Durée (min)" = w_mean_duree_passee_en_min,
+    "Vitesse (km/h)" = vitesse_en_kmh,
+    "Retours au domicile" = w_mean_nb_retours_domicile,
+    "Immobiles (%)" = freq_immobiles
+  ) %>%
+  label_to_colnames()
 knitr::kable(recapitulatif, digits = 2, caption = "Mobilité quotidienne en IDF par PCS de niveau 1")
 ```
 
@@ -142,13 +236,17 @@ CS8_non_renseignee <- individus %>%
   mutate(CS8 = if_else(is.na(CS8), "undefined", "defined"))
 ```
 ```{r}
-CS8_non_renseignee_age <- CS8_non_renseignee %>%
+CS8_non_renseignee_trage <- CS8_non_renseignee %>%
   filter(CS8 == "undefined") %>%
-  group_by(AGE) %>%
+  group_by(TRAGE) %>%
   count
 ```
 ```{r, echo=FALSE}
-knitr::kable(CS8_non_renseignee_age, caption = "Personnes dont la CS8 n'est pas renseignée, par âge")
+CS8_non_renseignee_trage_labelled <- CS8_non_renseignee_trage %>%
+  ungroup() %>%
+  mutate(TRAGE = sjlabelled::as_label(TRAGE)) %>%
+  label_to_colnames()
+knitr::kable(CS8_non_renseignee_trage_labelled, caption = "Personnes dont la CS8 n'est pas renseignée, par âge")
 ```
 ```{r}
 ggplot(CS8_non_renseignee) +
@@ -161,7 +259,12 @@ CAT_des_CS8_non_renseignee <- CS8_non_renseignee %>%
   count
 ```
 ```{r, echo=FALSE}
-knitr::kable(CAT_des_CS8_non_renseignee, caption = "15+ ans dont la CS8 n'est pas renseignée, par catégorie de personne")
+CAT_des_CS8_non_renseignee_labelled <- CAT_des_CS8_non_renseignee %>%
+  arrange(desc(n)) %>%
+  ungroup() %>%
+  mutate(CAT = sjlabelled::as_label(CAT)) %>%
+  label_to_colnames()
+knitr::kable(CAT_des_CS8_non_renseignee_labelled, caption = "15+ ans dont la CS8 n'est pas renseignée, par catégorie de personne")
 ```
 ```{r}
 CAT_simplifiee_des_CS8_non_renseignee <- CS8_non_renseignee %>%
@@ -176,19 +279,31 @@ knitr::kable(CAT_simplifiee_des_CS8_non_renseignee, caption = "15+ ans dont la C
 
 ## Distribution des temps de déplacements par jour et par personne
 
-```{r}
+```{r, message=FALSE}
+library(survey)
+
 temps_quotid_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   summarise(temps = sum(DUREE)) %>%
-  left_join(individus, by = c("NQUEST", "NP")) %>%
-  filter(!is.na(CS8)) %>%
-  group_by(CS8)
+  left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  filter(CS8 != "(Missing)") %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
 
-ggplot(temps_quotid_personne, aes(x = 1, y = temps, color = CS8)) +
-  facet_grid(cols = vars(CS8)) +
-  geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0, 350)) +
+svy_temps_quotid_personne <- svydesign(ids = ~1,
+                                       data = temps_quotid_personne,
+                                       weights = ~POIDSP)
+
+ggplot(svy_temps_quotid_personne$variables, aes(
+  weight = weights(svy_temps_quotid_personne),
+  x = CS8,
+  y = temps,
+  color = CS8)
+  ) +
+  geom_boxplot(outlier.shape = NA, varwidth = TRUE) +
   ggtitle("Distribution de la durée quotidienne des déplacements par personne") +
-  ylab("Temps quotidien alloué aux déplacements (en min)") +
-  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  ylab("Durée quotid. des déplacements (min)") +
+  xlab("PCS de niveau 1") +
+  guides(color = FALSE) +
+  theme(axis.title.y = element_text(vjust = 0)) +
+  coord_cartesian(ylim = c(0, 300))
 ```

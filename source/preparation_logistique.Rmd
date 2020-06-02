@@ -4,42 +4,41 @@ author: "Cantien Collinet"
 ---
 
 ```{r}
-prepare_individus_for_regression <- function (data) {
-  data <- data %>%
+prepare_individus_for_regression <- function (individus, menages) {
+  individus <- individus %>%
+    # Join menages
+    left_join(menages, by = c("NQUEST", "RESCOUR", "RESDEP", "RESSECT", "RESCOMM", "RESC", "JDEP")) %>%
     # Variable "is_PCS56"
     mutate(is_PCS56 = (CS24L == 56) & (!is.na(CS24L))) %>%
-    # Adapation des sexes
-    mutate(SEXE = fct_recode(SEXE, "Homme" = "1", "Femme" = "2")) %>%
     # 15 ans et plus, adapatation des tranches d'âge
     filter(AGE >= 15) %>%
-    mutate(TRAGE = fct_drop(TRAGE)) %>%
-    mutate(TRAGE = fct_recode(TRAGE, "[15;24]" = "2", "[25;34]" = "3", "[35;44]" = "4", "[45;54]" = "5", "[55;64]" = "6", "[65;74]" = "7")) %>%
+    mutate(TRAGE = sjlabelled::drop_labels(TRAGE)) %>%
     # Simplification des niveaux de diplôme et modalité de référence = bac
-    mutate(DIPL = fct_explicit_na(DIPL)) %>%
-    mutate(DIPL = fct_collapse(DIPL, "En cours" = c("1", "8"), "Inf. au lycée" = c("0", "2", "3"), "Lycée" = c("4"), "Bac" = c("5"), "Sup. au bac" = c("6", "7", "9"))) %>%
+    filter(!is.na(DIPL)) %>% # Peu d'individus
+    mutate(DIPL = fct_collapse(as_factor(DIPL), "En cours" = c("1", "8"), "Inf. au lycée" = c("0", "2", "3"), "Lycée" = c("4"), "Bac" = c("5"), "Sup. au bac" = c("6", "7", "9"))) %>%
     mutate(DIPL = fct_relevel(DIPL, "Bac")) %>%
+    # Occupation
+    filter(OCCP %in% c(1, 2)) %>%
+    mutate(OCCP = fct_recode(as_factor(OCCP), "Actif à plein temps" = "1", "Actif à temps partiel" = "2")) %>%
+    mutate(OCCP = fct_drop(OCCP)) %>%
     # Adapation des lieux de travail
-    mutate(TYPLT = fct_explicit_na(TYPLT)) %>%
-    mutate(TYPLT = fct_recode(TYPLT, "Bureau" = "1", "Commerce, boutique, grandes surfaces" = "2", "Entrepôt, usine, atelier" = "3", "Universités, collèges, lycées" = "4", "Hôpital" = "5", "Aéroports / gares" = "6", "Chez des particuliers" = "7", "Zones spéciales (Rungis, portuaires)" = "8", "Domicile" = "9", "Autres" = "10")) %>%
+    filter(!is.na(TYPLT)) %>% # Peu d'individus
     # Adapation de la variabilité des lieux de travail
-    mutate(ULTRAV = fct_explicit_na(ULTRAV)) %>%
-    mutate(ULTRAV = fct_recode(ULTRAV, "Unique, en dehors du domicile" = "1", "Unique, au domicile" = "2", "Pas de lieu fixe" = "3")) %>%
+    filter(!is.na(ULTRAV)) %>% # Peu d'individus
     # Adaptation de la localisation du lieu de travail
-    mutate(LTRAVCOUR = fct_explicit_na(LTRAVCOUR)) %>%
-    mutate(LTRAVCOUR = fct_recode(LTRAVCOUR, "Paris" = "1", "Petite couronne" = "2", "Grande Couronne" = "3")) %>%
+    mutate(LTRAVDEP = fct_explicit_na(as_factor(LTRAVDEP))) %>%
+    mutate(LTRAVCOUR = fct_explicit_na(as_factor(LTRAVCOUR))) %>%
     # Adapatation du permis de conduire
-    # mutate(PERMVP = fct_explicit_na(PERMVP)) %>% # Commenté car que 1 personne et ça complique la lecture
-    mutate(PERMVP = fct_recode(PERMVP, "Oui" = "1", "Non" = "2", "Conduite accompagnée ou leçons" = "3")) %>%
+    filter(!is.na(PERMVP)) %>% # Peu d'individus
+    mutate(PERMVP = fct_collapse(as_factor(PERMVP), "Oui" = c("1"), "Non" = c("2", "3"))) %>%
     # Adaptation de l'abonnement TC
-    mutate(ABONTC = fct_explicit_na(ABONTC)) %>%
+    mutate(ABONTC = fct_explicit_na(as_factor(ABONTC))) %>%
     mutate(ABONTC = fct_other(ABONTC, keep = "1", other_level = "Oui")) %>%
     mutate(ABONTC = fct_recode(ABONTC, "Non" = "1")) %>%
     # Modalité de référence pour la gêne dans les déplacements = oui
-    mutate(HANDI = fct_explicit_na(HANDI)) %>%
-    mutate(HANDI = fct_relevel(HANDI, "2")) %>%
-    mutate(HANDI = fct_recode(HANDI, "Oui" = "1", "Non" = "2"))
-  data
+    mutate(HANDI = fct_explicit_na(as_factor(HANDI))) %>%
+    mutate(HANDI = fct_relevel(HANDI, "2"))
+    
+  individus
 }
-
-individus_for_regression <- prepare_individus_for_regression(individus)
 ```

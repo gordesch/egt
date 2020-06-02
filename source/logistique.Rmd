@@ -5,73 +5,97 @@ author: "Cantien Collinet"
 
 # Qui sont les membres de la PCS 56 ?
 
-## Lien à la personne de référence
-```{r}
-ALL_LIENPREF <- individus %>%
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  group_by(LIENPREF) %>%
-  count
-
-PCS56_LIENPREF <- individus %>%
-  filter(CS24L == 56) %>%
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  group_by(LIENPREF) %>%
-  count
-
-lienpref <- ALL_LIENPREF %>% full_join(PCS56_LIENPREF, by = c("LIENPREF"), suffix = c(" all", " pcs_56"))
-```
-```{r, echo=FALSE}
-knitr::kable(lienpref, caption = "Lien à la personne de référence")
-```
-
-## Modèle logistique BINAIRE
+## Modèle logistique
 
 ### Préparation
 
 ```{r}
-library(survey)
-library(gtsummary)
-library(forestmodel)
-  
-individus_pere_mere_for_regression <- individus_for_regression %>%
-  # On ne garde que les pères et mères
-  mutate(LIENPREF = fct_collapse(LIENPREF, "pere-mere" = c("1", "2"))) %>%
-  mutate(LIENPREF = fct_other(LIENPREF, keep = "pere-mere")) %>%
-  filter(LIENPREF == "pere-mere")
+individus_for_regression <- individus %>%
+  # Join menages
+  left_join(menages, by = c("NQUEST", "RESCOUR", "RESDEP", "RESSECT", "RESCOMM", "RESC", "JDEP")) %>%
+  # Variable "is_PCS56"
+  mutate(is_PCS56 = (CS24L == 56) & (!is.na(CS24L))) %>%
+  # Sexe
+  mutate(SEXE = sjlabelled::as_label(SEXE)) %>%
+  # Plus de 15 ans
+  filter(AGE >= 15) %>%
+  # Classes d'âge
+  mutate(TRAGE = sjlabelled::drop_labels(TRAGE)) %>%
+  mutate(TRAGE = sjlabelled::as_label(TRAGE)) %>%
+  # Couronne de résidence
+  mutate(RESCOUR = sjlabelled::as_label(RESCOUR)) %>%
+  mutate(RESDEP = sjlabelled::as_label(RESDEP)) %>%
+  # Simplification des niveaux de diplôme et modalité de référence = bac
+  mutate(DIPL = sjlabelled::as_factor(DIPL)) %>%
+  filter(!is.na(DIPL)) %>% # Peu d'individus
+  mutate(DIPL = fct_collapse(
+    DIPL,
+    "En cours" = c("1", "8"),
+    "Inf. au lycée" = c("0", "2", "3"),
+    "Lycée" = c("4"),
+    "Bac" = c("5"),
+    "Sup. au bac" = c("6", "7", "9"))
+  ) %>%
+  mutate(DIPL = fct_relevel(DIPL, "Bac")) %>%
+  # Occupation
+  filter(OCCP %in% c(1, 2)) %>%
+  mutate(OCCP = fct_recode(as_factor(OCCP), "Actif à plein temps" = "1", "Actif à temps partiel" = "2")) %>%
+  mutate(OCCP = fct_drop(OCCP)) %>%
+  mutate(OCCP = sjlabelled::as_label(OCCP)) %>%
+  # Adapation des lieux de travail
+  filter(!is.na(TYPLT)) %>% # Peu d'individus
+  mutate(TYPLT = sjlabelled::as_label(TYPLT)) %>%
+  # Adapation de la variabilité des lieux de travail
+  filter(!is.na(ULTRAV)) %>% # Peu d'individus
+  mutate(ULTRAV = sjlabelled::as_label(ULTRAV)) %>%
+  # Adaptation de la localisation du lieu de travail
+  mutate(LTRAVDEP = sjlabelled::as_label(LTRAVDEP)) %>%
+  mutate(LTRAVCOUR = sjlabelled::as_label(LTRAVCOUR)) %>%
+  # Adapatation du permis de conduire
+  filter(!is.na(PERMVP)) %>% # Peu d'individus
+  mutate(PERMVP = fct_collapse(as_factor(PERMVP), "Oui" = c("1"), "Non" = c("2", "3"))) %>%
+  mutate(PERMVP = sjlabelled::as_label(PERMVP)) %>%
+  # Adaptation de l'abonnement TC
+  mutate(ABONTC = fct_explicit_na(sjlabelled::as_factor(ABONTC))) %>%
+  mutate(ABONTC = fct_other(ABONTC, keep = "1", other_level = "Oui")) %>%
+  mutate(ABONTC = fct_recode(ABONTC, "Non" = "1")) %>%
+  # Modalité de référence pour la gêne dans les déplacements = non
+  mutate(HANDI = sjlabelled::as_label(HANDI)) %>%
+  # Valeurs manquantes
+  mutate_if(is.factor, fct_explicit_na, na_level = "(Non renseigné)") %>%
+  mutate_if(is.factor, fct_drop)
 ```
 
 ### Régression
 ```{r}
-weighted_individus_pere_mere_for_regression <- svydesign(ids = ~1,
-  data = individus_pere_mere_for_regression, weights = ~POIDSP)
+weighted_individus_for_regression <- svydesign(ids = ~1, data = individus_for_regression, weights = ~POIDSP)
 
-reg_pere_mere <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
-  weighted_individus_pere_mere_for_regression, family = quasibinomial())
-
-weighted_individus_for_regression <- svydesign(ids = ~1,
-  data = individus_for_regression, weights = ~POIDSP)
-
-reg <- svyglm(is_PCS56 ~ SEXE + TRAGE + DIPL + TYPLT + ULTRAV + LTRAVCOUR + PERMVP + ABONTC + HANDI,
+model_full <- svyglm(is_PCS56 ~ SEXE + TRAGE + RESCOUR + RESDEP + DIPL + OCCP + TYPLT + ULTRAV + LTRAVCOUR + LTRAVDEP + PERMVP + ABONTC + HANDI,
   weighted_individus_for_regression, family = quasibinomial())
-
 ```
 
-### Tous les individus
+### Test type 3
+
+Une erreur m'empêche pour l'instant de sélectionner les variables signficatives par ce biais...
 ```{r}
-tbl_regression(reg, exponentiate = TRUE)
-```
-```{r}
-forest_model(reg)
+#tbl_regression(model_full, exponentiate = TRUE)
+#drop1(model_full, test="Chisq")
 ```
 
-### Que les pères et mères
 
+### Sélection des variables significatives
+
+Je fais donc une régression stepwise
 ```{r}
-tbl_regression(reg_pere_mere, exponentiate = TRUE)
+model_reduced <- step(model_full)
+```
+
+
+### Résultats de la régression logistique
+```{r}
+tbl_regression(model_reduced, exponentiate = TRUE)
 ```
 ```{r}
-forest_model(reg_pere_mere)
+forest_model(model_reduced)
 ```
 

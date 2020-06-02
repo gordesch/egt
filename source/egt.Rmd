@@ -10,31 +10,35 @@ output:
 # Préparation du traitement
 Installation des librairies et importation des données
 ```{r, setup, results='hide', message=FALSE}
-library(tidyverse)
-library(haven)
-library(viridis)
+source("support/preparation.R")
+
 library(questionr)
+library(survey)
+library(gtsummary)
+library(forestmodel)
+```
 
-# Viridis colors as default for ggplot2 : easier to read by those with colorblindness, and print well in grey scale.
-options(ggplot2.continuous.colour="viridis")
-options(ggplot2.continuous.fill = "viridis")
-scale_colour_discrete <- scale_colour_viridis_d
-scale_fill_discrete <- scale_fill_viridis_d
-
-menages <- read_sas("../data/men2010.sas7bdat")
-individus <- read_sas("../data/ind2010.sas7bdat")
-deplacements <- read_sas("../data/dplct2010.sas7bdat")
-trajets <- read_sas("../data/trajet2010.sas7bdat")
-
-# Recode to factors, except a few columns
+```{r}
+menages_people_count <- menages %>%
+  full_join(individus, by = c("NQUEST")) %>%
+  group_by(NQUEST) %>%
+  summarise(
+    adult_count = sum(AGE >= 18),
+    children_count = sum(TRAGE %in% c(0, 1)),
+    employed_count = sum(OCCP %in% c(1, 2)),
+    older_than_or_14_years_old_count = sum(AGE >= 14),
+    others_older_than_or_14_years_old_count = older_than_or_14_years_old_count - 1,
+    lower_than_14_years_old_count = sum(AGE < 14),
+    lower_than_10_years_old_count = sum(AGE < 10)
+  ) %>%
+  mutate(
+    UC = 1,
+    UC = UC + (others_older_than_or_14_years_old_count * 0.5),
+    UC = UC + (lower_than_14_years_old_count * 0.3)
+  ) %>%
+  select(-older_than_or_14_years_old_count, -others_older_than_or_14_years_old_count, -lower_than_14_years_old_count)
 menages <- menages %>%
-  mutate_at(vars(-POIDSM, -MNP, -MNP5, -MNPMOB, -MNPACT, -LOY_HC, -CHG, -LOY_PARK, -NBPI, -SURF, -ANEM, -MNEM, -NB_VELO, -NB_VAE, -NB_2RM, -NB_VEH, -ANKMRM1, -ANKMV1, -CPTKMV1, -ANKMV2, -CPTKMV2, -ANKMV3, -CPTKMV3, -ANKMV4, -CPTKMV4), factor)
-individus <- individus %>%
-  mutate_at(vars(-POIDSP, -AGE, -NBDEPL, -NBDEPLVP, -NBDEPLVPC, -NBDEPLTC, -NBDEPLVELO, -NBDEPL2RM, -NBDEPLMAP, -DDOMTRAV), factor)
-deplacements <- deplacements %>%
-  mutate_at(vars(-POIDSP, -DPORTEE, -DUREE, -NBTRAJ, -NBTRAJVP, -NBTRAJVPC, -NBTRAJTC, -NBTRAJVELO, -NBTRAJ2RM, -NBCO), factor)
-trajets <- trajets %>%
-  mutate_at(vars(-POIDSP, -TPORTEE), factor)
+  full_join(menages_people_count, by = c("NQUEST"))
 ```
 
 <!--
@@ -44,16 +48,39 @@ trajets <- trajets %>%
 ```
 -->
 
-<!--
 # Préparation pour le modèle logistique
 
-```{r, child=c('logistique.Rmd')}
+```{r, child=c('preparation_logistique.Rmd')}
 ```
--->
 
-<!--
-# Modèle logistique 1
 
-```{r, child=c('logistique.Rmd')}
+<!-- # Modèle logistique BINAIRE -->
+
+<!-- ```{r, child=c('logistique.Rmd')} -->
+
+```{r}
+rev_tps <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(temps = tidyr::replace_na(temps, 0)) %>%
+  left_join(menages, by = c("NQUEST")) %>%
+  filter(!is.na(CS8))
+
+ggplot(rev_tps, aes(x = temps, y = REVENU)) +
+  geom_point()
 ```
--->
+
+
+```{r}
+rev_tps <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  right_join(individus, by = c("NQUEST", "NP")) %>%
+  mutate(temps = replace_na(temps, 0)) %>%
+  left_join(menages, by = c("NQUEST")) %>%
+  filter(!is.na(CS8), CS8 == 5, CS8 == 6)
+
+ggplot(rev_tps, aes(x = temps, y = REVMEN)) +
+  geom_point()
+```
