@@ -9,7 +9,7 @@ output:
 
 # Préparation des données
 Installation des librairies et importation des données
-```{r, setup, results='hide', message=FALSE}
+```{r setup, results='hide', message=FALSE}
 source("support/preparation.R")
 individus_CS8_short <- individus %>%
   var_labels(

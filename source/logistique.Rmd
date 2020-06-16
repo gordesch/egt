@@ -9,7 +9,7 @@ output:
 
 # Préparation du traitement
 Installation des librairies et importation des données
-```{r, setup, results='hide', message=FALSE}
+```{r setup, results='hide', message=FALSE}
 source("support/preparation.R")
 
 library(questionr)

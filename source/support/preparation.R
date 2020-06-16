@@ -999,6 +999,26 @@ individus <- individus %>%
     ),
   )
 
+
+# Étiquettes de valeurs, table "Individus" (CS8_short) ----
+
+individus_CS8_short <- individus %>%
+  var_labels(
+    CS8 = "PCS (niv. 1)"
+  ) %>%
+  val_labels(
+    CS8 = c(
+      "Agri." = "1",
+      "Art." = "2",
+      "CPIS" = "3",
+      "P.I." = "4",
+      "Empl." = "5",
+      "Ouvr." = "6",
+      "Retr." = "7",
+      "Autres" = "8"
+    )
+  )
+
 # Étiquettes de variables, table "Déplacements" ----
 
 deplacements <- deplacements %>%

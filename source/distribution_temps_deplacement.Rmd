@@ -7,45 +7,50 @@ output:
   html_notebook: default
 ---
 
-# Préparation des données
+# Préparation des données ----
 Installation des librairies et importation des données
-```{r, setup, results='hide', message=FALSE}
+```{r setup, results='hide', message=FALSE}
 source("support/preparation.R")
-individus_CS8_short <- individus %>%
-  var_labels(
-    CS8 = "PCS niv. 1"
-  ) %>%
-  val_labels(
-    CS8 = c(
-      "Agri." = "1",
-      "Art." = "2",
-      "CPIS" = "3",
-      "P.I." = "4",
-      "Empl." = "5",
-      "Ouvr." = "6",
-      "Retr." = "7",
-      "Autres" = "8"
-    )
-  )
 ```
 
-# Exploration
+# Exploration ----
 
-## Distribution des temps de déplacements par jour et par personne
+## Distribution des temps de déplacements par jour et par personne ----
 
+On ne garde que les individus dont la PCS est renseignée et on calcule la somme de leurs temps de déplacement
 ```{r, message=FALSE}
 library(survey)
 
-temps_quotid_personne <- deplacements %>%
+temps_quotid_personne_brut <- deplacements %>%
   group_by(NQUEST, NP) %>%
   summarise(temps = sum(DUREE)) %>%
   left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
-  mutate(temps = tidyr::replace_na(temps, 0)) %>%
-  filter(!is.na(CS8)) %>%
+  mutate(temps = tidyr::replace_na(temps, 0)) %>% # O pour les individus qui ne se sont pas déplacés
+  filter(!is.na(CS8))
+```
+
+Tableau avec les individus de toutes les PCS de niveau 1
+```{r}
+temps_quotid_personne <- temps_quotid_personne_brut %>%
   mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps_quotid_personne <-  sjlabelled::copy_labels(temps_quotid_personne, temps_quotid_personne_brut)
 
 dw <- svydesign(ids = ~1,
                 data = temps_quotid_personne,
+                weights = ~POIDSP)
+```
+
+Tableau avec uniquement les CPIS, employés et ouvriers
+```{r}
+temps_quotid_personne_subset <- subset(temps_quotid_personne_brut, CS8 %in% c(3, 5, 6))
+temps_quotid_personne_subset <- temps_quotid_personne_subset %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps_quotid_personne_subset <-  sjlabelled::copy_labels(temps_quotid_personne_subset, temps_quotid_personne_brut)
+
+
+
+dw_subset <- svydesign(ids = ~1,
+                data = temps_quotid_personne_subset,
                 weights = ~POIDSP)
 ```
 
@@ -68,22 +73,24 @@ ggplot(dw$variables, aes(
 
 ```{r, message=FALSE}
 svyhist(~temps, dw, main = "Histogramme")
+ggplot(dw$variables, aes(weight = weights(dw), x = temps)) +
+  geom_histogram()
 ```
 
 ```{r, message=FALSE}
 moyennes <- svyby(~temps, ~CS8, dw, svymean)
 ```
 ```{r, echo=FALSE}
-moyennes <- moyennes %>% rename("Temps moyen (min)" = "temps", "Écart-type" = "se")
-knitr::kable(moyennes, caption = "Temps quotidiens de déplacement moyens", digits = 0)
+moyennes_table <- moyennes %>% rename("Temps moyen (min)" = "temps", "Écart-type" = "se")
+knitr::kable(moyennes_table, caption = "Temps quotidiens de déplacement moyens", digits = 0)
 ```
 
 ```{r, warning=FALSE, message=FALSE}
 quartiles <- svyby(~temps, ~CS8, dw, svyquantile, quantiles = c(0.25, 0.5, 0.75), ci = TRUE, vartype= "ci")
 ```
 ```{r, echo=FALSE}
-quartiles <- quartiles %>% rename("1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75")
-knitr::kable(quartiles[2:4], caption = "Distribution des temps quotidiens de déplacement (quartiles, en min)", digits = 0)
+quartiles_table <- quartiles %>% rename("1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75")
+knitr::kable(quartiles_table[2:4], caption = "Distribution des temps quotidiens de déplacement (quartiles, en min)", digits = 0)
 ```
 
 ```{r, message=FALSE}
@@ -92,39 +99,21 @@ cdw <- convey_prep(dw)
 gini <- svyby(~temps, ~CS8, cdw, svygini)
 ```
 ```{r, echo=FALSE}
-gini <- gini %>% rename("Coefficient de Gini" = "temps", "Écart-type" = "se")
-knitr::kable(gini[2], caption = "Temps quotidiens de déplacement moyens")
+gini_table <- gini %>% rename("Coefficient de Gini" = "temps", "Écart-type" = "se")
+knitr::kable(gini_table[2], caption = "Temps quotidiens de déplacement moyens", digits = 3)
 ```
 
 ```{r}
 library(gglorenz)
 
-temps_quotid_personne <- deplacements %>%
-  group_by(NQUEST, NP) %>%
-  summarise(temps = sum(DUREE)) %>%
-  left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
-  mutate(temps = tidyr::replace_na(temps, 0)) %>%
-  filter(!is.na(CS8))
-
-temps_quotid_personne_subset <- subset(temps_quotid_personne, CS8 %in% c(3, 5, 6))
-temps_quotid_personne_subset <- temps_quotid_personne_subset %>%
-  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
-
-dw <- svydesign(ids = ~1,
-                data = temps_quotid_personne_subset,
-                weights = ~POIDSP)
-```
-
-```{r}
-ggplot(dw$variables, aes(
-  weight = weights(dw),
-  x = temps,
-  color = CS8)) +
-    stat_lorenz(desc = TRUE) +
-    coord_fixed() +
-    geom_abline(linetype = "dashed") +
-    labs(x = "Part cumulée des individus",
-         y = "Part cumulée des temps de déplacements",
-         title = "Inégalités des temps de déplacement")
+ggplot(dw_subset$variables) +
+  stat_lorenz(aes(weight = weights(dw_subset), x = temps, color = "Toutes les PCS"), color = "black", linetype = "dotted", desc = FALSE) +
+  stat_lorenz(aes(weight = weights(dw_subset), x = temps, color = CS8), desc = FALSE) +
+  coord_fixed() +
+  geom_abline(linetype = "dashed") +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_quotid_personne$CS8)) +
+  labs(x = "Part cumulée des individus",
+       y = "Part cumulée des temps de déplacements",
+       title = "Inégalités des temps de déplacement")
 ```
 
