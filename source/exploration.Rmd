@@ -20,7 +20,7 @@ individus_CS8_short <- individus %>%
       "Agri." = "1",
       "Art." = "2",
       "CPIS" = "3",
-      "PI" = "4",
+      "P.I." = "4",
       "Empl." = "5",
       "Ouvr." = "6",
       "Retr." = "7",
@@ -72,7 +72,7 @@ deplacements_quotid_personne <- deplacements %>%
   group_by(NQUEST, NP) %>%
   count %>%
   right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
-  mutate(n = tidyr::replace_na(n, 0)) %>%
+  mutate(n = tidyr::replace_na(n, 0)) %>% # Individus immobiles
   filter(!is.na(CS8)) %>%
   group_by(CS8) %>%
   summarise(w_mean_nb_deplacements = weighted.mean(n, POIDSP))
@@ -98,7 +98,7 @@ immobiles <- deplacements %>%
   mutate(n_deplacements = tidyr::replace_na(n, 0)) %>%
   mutate(immobile = (n_deplacements == 0)) %>%
   mutate(immobile = as_factor(immobile)) %>%
-  # Fréquence
+  # Fréquence pondérée
   group_by(CS8, immobile) %>%
   count(CS8, immobile, wt = POIDSP, .drop=FALSE) %>%
   group_by(CS8) %>%

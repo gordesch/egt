@@ -1,7 +1,22 @@
 ---
 title: "Modèle logistique"
 author: "Cantien Collinet"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
 ---
+
+# Préparation du traitement
+Installation des librairies et importation des données
+```{r, setup, results='hide', message=FALSE}
+source("support/preparation.R")
+
+library(questionr)
+library(survey)
+library(gtsummary)
+library(forestmodel)
+```
 
 # Qui sont les membres de la PCS 56 ?
 
@@ -39,7 +54,7 @@ individus_for_regression <- individus %>%
   mutate(DIPL = fct_relevel(DIPL, "Bac")) %>%
   # Occupation
   filter(OCCP %in% c(1, 2)) %>%
-  mutate(OCCP = fct_recode(as_factor(OCCP), "Actif à plein temps" = "1", "Actif à temps partiel" = "2")) %>%
+  mutate(OCCP = fct_recode(sjlabelled::as_factor(OCCP), "Actif à plein temps" = "1", "Actif à temps partiel" = "2")) %>%
   mutate(OCCP = fct_drop(OCCP)) %>%
   mutate(OCCP = sjlabelled::as_label(OCCP)) %>%
   # Adapation des lieux de travail
@@ -53,7 +68,7 @@ individus_for_regression <- individus %>%
   mutate(LTRAVCOUR = sjlabelled::as_label(LTRAVCOUR)) %>%
   # Adapatation du permis de conduire
   filter(!is.na(PERMVP)) %>% # Peu d'individus
-  mutate(PERMVP = fct_collapse(as_factor(PERMVP), "Oui" = c("1"), "Non" = c("2", "3"))) %>%
+  mutate(PERMVP = fct_collapse(sjlabelled::as_factor(PERMVP), "Oui" = c("1"), "Non" = c("2", "3"))) %>%
   mutate(PERMVP = sjlabelled::as_label(PERMVP)) %>%
   # Adaptation de l'abonnement TC
   mutate(ABONTC = fct_explicit_na(sjlabelled::as_factor(ABONTC))) %>%
@@ -76,16 +91,15 @@ model_full <- svyglm(is_PCS56 ~ SEXE + TRAGE + RESCOUR + RESDEP + DIPL + OCCP + 
 
 ### Test type 3
 
-Une erreur m'empêche pour l'instant de sélectionner les variables signficatives par ce biais...
+Test de type 3 pour savoir quelles sont les variables significatives
 ```{r}
-#tbl_regression(model_full, exponentiate = TRUE)
-#drop1(model_full, test="Chisq")
+drop1(model_full, test="Chisq")
 ```
-
 
 ### Sélection des variables significatives
 
-Je fais donc une régression stepwise
+Régression stepwise pour améliorer le modèle
+et récupérer automatiquement un modèle simplifié
 ```{r}
 model_reduced <- step(model_full)
 ```
@@ -95,7 +109,3 @@ model_reduced <- step(model_full)
 ```{r}
 tbl_regression(model_reduced, exponentiate = TRUE)
 ```
-```{r}
-forest_model(model_reduced)
-```
-
