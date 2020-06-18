@@ -1,5 +1,5 @@
 ---
-title: "Exploration du jeu de données"
+title: "Temps de déplacement, distribution"
 author: "Cantien Collinet"
 date: "`r format(Sys.time(), '%A %d %B %Y')`"
 output:
@@ -11,109 +11,170 @@ output:
 Installation des librairies et importation des données
 ```{r setup, results='hide', message=FALSE}
 source("support/preparation.R")
+
+# Calcul des temps de déplacement
+temps_brut <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(temps = tidyr::replace_na(temps, 0)) %>% # O pour les immobiles
+  filter(!is.na(CS8)) %>%
+  var_labels(temps = "Durée quotidienne de déplacement par personne (en min)")
+
+# Tableau avec les individus de toutes les PCS de niveau 1
+temps <- temps_brut %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps <-  sjlabelled::copy_labels(temps, temps_brut)
+
+# Données pondérées
+temps_w <- svydesign(ids = ~1,
+                data = temps,
+                weights = ~POIDSP)
+
+# Tableau avec uniquement les CPIS, employés et ouvriers
+temps_subset <- subset(temps_brut, CS8 %in% c(3, 5, 6))
+temps_subset <- temps_subset %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps_subset <-  sjlabelled::copy_labels(temps_subset, temps_brut)
+
+# Données pondérées
+temps_subset_w <- svydesign(ids = ~1,
+                data = temps_subset,
+                weights = ~POIDSP)
 ```
 
 # Exploration ----
 
 ## Distribution des temps de déplacements par jour et par personne ----
 
-On ne garde que les individus dont la PCS est renseignée et on calcule la somme de leurs temps de déplacement
 ```{r, message=FALSE}
-library(survey)
-
-temps_quotid_personne_brut <- deplacements %>%
-  group_by(NQUEST, NP) %>%
-  summarise(temps = sum(DUREE)) %>%
-  left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
-  mutate(temps = tidyr::replace_na(temps, 0)) %>% # O pour les individus qui ne se sont pas déplacés
-  filter(!is.na(CS8))
-```
-
-Tableau avec les individus de toutes les PCS de niveau 1
-```{r}
-temps_quotid_personne <- temps_quotid_personne_brut %>%
-  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
-temps_quotid_personne <-  sjlabelled::copy_labels(temps_quotid_personne, temps_quotid_personne_brut)
-
-dw <- svydesign(ids = ~1,
-                data = temps_quotid_personne,
-                weights = ~POIDSP)
-```
-
-Tableau avec uniquement les CPIS, employés et ouvriers
-```{r}
-temps_quotid_personne_subset <- subset(temps_quotid_personne_brut, CS8 %in% c(3, 5, 6))
-temps_quotid_personne_subset <- temps_quotid_personne_subset %>%
-  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
-temps_quotid_personne_subset <-  sjlabelled::copy_labels(temps_quotid_personne_subset, temps_quotid_personne_brut)
-
-
-
-dw_subset <- svydesign(ids = ~1,
-                data = temps_quotid_personne_subset,
-                weights = ~POIDSP)
-```
-
-```{r, message=FALSE}
-ggplot(dw$variables, aes(
-  weight = weights(dw),
+ggplot(temps_w$variables, aes(
+  weight = weights(temps_w),
   x = CS8,
-  y = temps,
+  y = temps / 60,
   color = CS8)
   ) +
   geom_boxplot(outlier.shape = NA, varwidth = TRUE) +
-  ggtitle("Distribution de la durée quotidienne des déplacements par personne") +
-  ylab("Durée quotid. des déplacements (min)") +
+  ggtitle(
+    "Distribution de la durée quotidienne des déplacements par personne",
+    subtitle = "(La largeur des boites à moustaches est proportionnelle au nombre d'individus)"
+  ) +
+  ylab("Durée quotid. des déplacements (heures)") +
   xlab("PCS de niveau 1") +
   guides(color = FALSE) +
   theme(axis.title.y = element_text(vjust = 0)) +
-  coord_cartesian(ylim = c(0, 300))
+  coord_cartesian(ylim = c(0, 5))
 ```
 
 
 ```{r, message=FALSE}
-svyhist(~temps, dw, main = "Histogramme")
-ggplot(dw$variables, aes(weight = weights(dw), x = temps)) +
-  geom_histogram()
+ggplot(temps_w$variables, aes(weight = weights(temps_w), x = temps)) +
+  geom_density()
 ```
 
 ```{r, message=FALSE}
-moyennes <- svyby(~temps, ~CS8, dw, svymean)
-```
-```{r, echo=FALSE}
-moyennes_table <- moyennes %>% rename("Temps moyen (min)" = "temps", "Écart-type" = "se")
-knitr::kable(moyennes_table, caption = "Temps quotidiens de déplacement moyens", digits = 0)
+temps_moyennes <- svyby(~temps, ~CS8, temps_w, svymean)
 ```
 
 ```{r, warning=FALSE, message=FALSE}
-quartiles <- svyby(~temps, ~CS8, dw, svyquantile, quantiles = c(0.25, 0.5, 0.75), ci = TRUE, vartype= "ci")
-```
-```{r, echo=FALSE}
-quartiles_table <- quartiles %>% rename("1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75")
-knitr::kable(quartiles_table[2:4], caption = "Distribution des temps quotidiens de déplacement (quartiles, en min)", digits = 0)
+temps_quantiles <- svyby(
+  ~temps,
+  ~CS8,
+  temps_w,
+  svyquantile,
+  quantiles = c(0.1, 0.25, 0.5, 0.75, 0.9),
+  ci = TRUE,
+  vartype= "ci"
+)
 ```
 
 ```{r, message=FALSE}
 library(convey)
-cdw <- convey_prep(dw)
-gini <- svyby(~temps, ~CS8, cdw, svygini)
+temps_cw <- convey_prep(temps_w)
+temps_gini <- svyby(~temps, ~CS8, temps_cw, svygini)
 ```
+
 ```{r, echo=FALSE}
-gini_table <- gini %>% rename("Coefficient de Gini" = "temps", "Écart-type" = "se")
-knitr::kable(gini_table[2], caption = "Temps quotidiens de déplacement moyens", digits = 3)
+temps_moyennes_table <- temps_moyennes[1:2] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("Moyenne" = "temps")
+
+temps_quantiles_table <- temps_quantiles[1:6] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("1er décile" = "0.1", "1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75", "9e décile" = "0.9")
+
+temps_gini_table <- temps_gini[1:2] %>%
+  mutate_if(is.numeric, round, 3) %>%
+  rename("Coefficient de Gini" = "temps")
+
+recap_temps <- temps_moyennes_table %>%
+  full_join(temps_quantiles_table, by = c("CS8")) %>%
+  full_join(temps_gini_table, by = c("CS8")) %>%
+  sjlabelled::copy_labels(temps) %>%
+  label_to_colnames()
+
+knitr::kable(recap_temps, caption = "Durée quotidienne des déplacements par personne (en min)")
 ```
 
 ```{r}
 library(gglorenz)
 
-ggplot(dw_subset$variables) +
-  stat_lorenz(aes(weight = weights(dw_subset), x = temps, color = "Toutes les PCS"), color = "black", linetype = "dotted", desc = FALSE) +
-  stat_lorenz(aes(weight = weights(dw_subset), x = temps, color = CS8), desc = FALSE) +
+ggplot(temps_subset_w$variables) +
+  stat_lorenz(aes(weight = weights(temps_subset_w), x = temps, colour = "Toutes les PCS"), color = "black", linetype = "dotted", desc = FALSE) +
+  stat_lorenz(aes(weight = weights(temps_subset_w), x = temps, colour = CS8), desc = FALSE) +
   coord_fixed() +
   geom_abline(linetype = "dashed") +
-  scale_colour_discrete(name  = sjlabelled::get_label(temps_quotid_personne$CS8)) +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
   labs(x = "Part cumulée des individus",
-       y = "Part cumulée des temps de déplacements",
+       y = "Part cumulée de la durée des déplacements",
        title = "Inégalités des temps de déplacement")
+```
+
+```{r}
+ggplot(temps_subset_w$variables, aes(
+  weight = weights(temps_subset_w),
+  x = temps / 60,
+  color = CS8,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 4, 1), seq(5, 15, 2)),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution de la durée quotidienne des déplacements, par personne",
+    x = "Durée quotidienne des déplacements (en heures)",
+    y = "Fréquence"
+  )
+```
+
+```{r}
+ggplot(temps_subset_w$variables, aes(
+  weight = weights(temps_subset_w),
+  x = temps / 60,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, position = "fill", alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 4, 1), seq(5, 15, 2)),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  scale_y_continuous(
+    breaks = c(0, 0.33, 0.66, 1),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution relative de la durée quotidienne des déplacements, par personne",
+    x = "Durée quotidienne des déplacements (en heures)",
+    y = "Fréquence relative"
+  )
 ```
 

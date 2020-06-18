@@ -1,0 +1,550 @@
+---
+title: "EGT 2010 : analyse des distributions"
+author: "Cantien Collinet"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+# Préparation des données
+
+Installation des librairies et importation des données
+
+```{r setup, results='hide', message=FALSE}
+source("support/preparation.R")
+
+## Durée des déplacements ----
+
+# Calcul des temps de déplacement
+temps_brut <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(temps = sum(DUREE)) %>%
+  left_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(temps = tidyr::replace_na(temps, 0)) %>% # O pour les immobiles
+  filter(!is.na(CS8)) %>%
+  var_labels(temps = "Durée quotidienne de déplacement par personne (en min)")
+
+# Tableau avec les individus de toutes les PCS de niveau 1
+temps <- temps_brut %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps <-  sjlabelled::copy_labels(temps, temps_brut)
+
+# Données pondérées
+temps_w <- svydesign(ids = ~1,
+                data = temps,
+                weights = ~POIDSP)
+
+# Tableau avec uniquement les CPIS, employés et ouvriers
+temps_subset <- subset(temps_brut, CS8 %in% c(3, 5, 6))
+temps_subset <- temps_subset %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+temps_subset <-  sjlabelled::copy_labels(temps_subset, temps_brut)
+
+# Données pondérées
+temps_subset_w <- svydesign(ids = ~1,
+                data = temps_subset,
+                weights = ~POIDSP)
+
+## Distances parcourues ----
+
+# Calcul des distances parcourues
+distance_brut <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  summarise(distance = sum(DPORTEE)) %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(distance = tidyr::replace_na(distance, 0)) %>% # 0 pour les immobiles
+  filter(!is.na(CS8)) %>%
+  var_labels(distance = "Distance parcourue quotidiennement par personne (en km)")
+
+# Tableau avec les individus de toutes les PCS de niveau 1
+distance <- distance_brut %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+distance <-  sjlabelled::copy_labels(distance, distance_brut)
+
+# Données pondérées
+distance_w <- svydesign(ids = ~1,
+                data = distance,
+                weights = ~POIDSP)
+
+# Tableau avec uniquement les CPIS, employés et ouvriers
+distance_subset <- subset(distance_brut, CS8 %in% c(3, 5, 6))
+distance_subset <- distance_subset %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+distance_subset <-  sjlabelled::copy_labels(distance_subset, distance_brut)
+
+# Données pondérées
+distance_subset_w <- svydesign(ids = ~1,
+                data = distance_subset,
+                weights = ~POIDSP)
+
+## Nombre de déplacements ----
+
+# Calcul du nombre de déplacements
+nb_deplacements_brut <- deplacements %>%
+  group_by(NQUEST, NP) %>%
+  count %>%
+  right_join(individus_CS8_short, by = c("NQUEST", "NP")) %>%
+  mutate(n = tidyr::replace_na(n, 0)) %>% # Individus immobiles
+  filter(!is.na(CS8)) %>%
+  var_labels(n = "Nombre de déplacements quotidiens par personne")
+
+# Tableau avec les individus de toutes les PCS de niveau 1
+nb_deplacements <- nb_deplacements_brut %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+nb_deplacements <-  sjlabelled::copy_labels(nb_deplacements, nb_deplacements_brut)
+
+# Données pondérées
+nb_deplacements_w <- svydesign(ids = ~1,
+                data = nb_deplacements,
+                weights = ~POIDSP)
+
+# Tableau avec uniquement les CPIS, employés et ouvriers
+nb_deplacements_subset <- subset(nb_deplacements_brut, CS8 %in% c(3, 5, 6))
+nb_deplacements_subset <- nb_deplacements_subset %>%
+  mutate(CS8 = sjlabelled::as_label(CS8, prefix = TRUE))
+nb_deplacements_subset <-  sjlabelled::copy_labels(
+  nb_deplacements_subset,
+  nb_deplacements_brut
+)
+
+# Données pondérées
+nb_deplacements_subset_w <- svydesign(ids = ~1,
+                data = nb_deplacements_subset,
+                weights = ~POIDSP)
+```
+
+
+# Exploration
+
+## Quartiles
+
+### Durée des déplacements
+
+```{r, message=FALSE}
+ggplot(temps_w$variables, aes(
+  weight = weights(temps_w),
+  x = CS8,
+  y = temps / 60,
+  color = CS8)
+  ) +
+  geom_boxplot(outlier.shape = NA, varwidth = TRUE) +
+  ggtitle(
+    "Distribution de la durée quotidienne des déplacements par personne",
+    subtitle = "(La largeur des boites à moustaches est proportionnelle au nombre d'individus)"
+  ) +
+  ylab("Durée quotid. des déplacements (heures)") +
+  xlab("PCS de niveau 1") +
+  guides(color = FALSE) +
+  theme(axis.title.y = element_text(vjust = 0)) +
+  coord_cartesian(ylim = c(0, 5))
+```
+
+### Distances parcourues
+
+```{r, message=FALSE}
+ggplot(distance_w$variables, aes(
+  weight = weights(distance_w),
+  x = CS8,
+  y = distance,
+  color = CS8)
+  ) +
+  geom_boxplot(outlier.shape = NA, varwidth = TRUE) +
+  ggtitle("Distribution des distances quotidiennes parcourues par personne") +
+  ylab("Distance parcourue quotidiennement (km)") +
+  xlab("PCS de niveau 1") +
+  guides(color = FALSE) +
+  theme(axis.title.y = element_text(vjust = 0)) +
+  coord_cartesian(ylim = c(0, 100))
+```
+
+### Nombre de déplacements
+
+```{r, message=FALSE}
+ggplot(nb_deplacements_w$variables, aes(
+  weight = weights(nb_deplacements_w),
+  x = CS8,
+  y = n,
+  color = CS8)
+  ) +
+  geom_boxplot(outlier.shape = NA, varwidth = TRUE) +
+  ggtitle("Nombre de déplacements quotidiens par personne") +
+  ylab("Nombre de déplacements quotidiens") +
+  xlab("PCS de niveau 1") +
+  guides(color = FALSE) +
+  theme(axis.title.y = element_text(vjust = 0)) +
+  coord_cartesian(ylim = c(0, 12.5))
+```
+
+## Fonctions de densité
+
+Vérification qu'il n'y ait pas de valeurs fausses ou surprenantes dans la distribution.
+
+### Durée des déplacements
+
+```{r, message=FALSE}
+ggplot(temps_w$variables, aes(weight = weights(temps_w), x = temps)) +
+  geom_density()
+```
+
+### Distances parcourues
+
+```{r, message=FALSE}
+ggplot(distance_w$variables, aes(weight = weights(distance_w), x = distance)) +
+  geom_density()
+```
+
+### Nombre de déplacements
+
+```{r, message=FALSE}
+ggplot(nb_deplacements_w$variables, aes(weight = weights(nb_deplacements_w), x = n)) +
+  geom_density()
+```
+
+## Statistiques descriptives
+
+### Durée des déplacements
+
+```{r, message=FALSE}
+temps_moyennes <- svyby(~temps, ~CS8, temps_w, svymean)
+```
+
+```{r, warning=FALSE, message=FALSE}
+temps_quantiles <- svyby(
+  ~temps,
+  ~CS8,
+  temps_w,
+  svyquantile,
+  quantiles = c(0.1, 0.25, 0.5, 0.75, 0.9),
+  ci = TRUE,
+  vartype= "ci"
+)
+```
+
+```{r, message=FALSE}
+library(convey)
+temps_cw <- convey_prep(temps_w)
+temps_gini <- svyby(~temps, ~CS8, temps_cw, svygini)
+```
+
+```{r, echo=FALSE}
+temps_moyennes_table <- temps_moyennes[1:2] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("Moyenne" = "temps")
+
+temps_quantiles_table <- temps_quantiles[1:6] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("1er décile" = "0.1", "1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75", "9e décile" = "0.9")
+
+temps_gini_table <- temps_gini[1:2] %>%
+  mutate_if(is.numeric, round, 3) %>%
+  rename("Coefficient de Gini" = "temps")
+
+recap_temps <- temps_moyennes_table %>%
+  full_join(temps_quantiles_table, by = c("CS8")) %>%
+  full_join(temps_gini_table, by = c("CS8")) %>%
+  sjlabelled::copy_labels(temps) %>%
+  label_to_colnames()
+
+knitr::kable(recap_temps, caption = "Durée quotidienne des déplacements par personne (en min)")
+```
+
+### Distances parcourues
+
+```{r, message=FALSE}
+distance_moyennes <- svyby(~distance, ~CS8, distance_w, svymean)
+```
+
+```{r, warning=FALSE, message=FALSE}
+distance_quantiles <- svyby(
+  ~distance,
+  ~CS8,
+  distance_w,
+  svyquantile,
+  quantiles = c(0.1, 0.25, 0.5, 0.75, 0.9),
+  ci = TRUE,
+  vartype= "ci"
+)
+```
+
+```{r, message=FALSE}
+library(convey)
+distance_cw <- convey_prep(distance_w)
+distance_gini <- svyby(~distance, ~CS8, distance_cw, svygini)
+```
+
+
+```{r, echo=FALSE}
+distance_moyennes_table <- distance_moyennes[1:2] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("Moyenne" = "distance")
+
+distance_quantiles_table <- distance_quantiles[1:6] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("1er décile" = "0.1", "1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75", "9e décile" = "0.9")
+
+distance_gini_table <- distance_gini[1:2] %>%
+  mutate_if(is.numeric, round, 3) %>%
+  rename("Coefficient de Gini" = "distance")
+
+recap_distance <- distance_moyennes_table %>%
+  full_join(distance_quantiles_table, by = c("CS8")) %>%
+  full_join(distance_gini_table, by = c("CS8")) %>%
+  sjlabelled::copy_labels(distance) %>%
+  label_to_colnames()
+
+knitr::kable(recap_distance, caption = "Distances quotidiennes parcourues par personne (en km)")
+```
+
+### Nombre de déplacements
+
+Calcul de la moyenne
+```{r, message=FALSE}
+nb_deplacements_moyennes <- svyby(~n, ~CS8, nb_deplacements_w, svymean)
+```
+
+Calcul des quartiles et quantiles
+```{r, warning=FALSE, message=FALSE}
+nb_deplacements_quantiles <- svyby(
+  ~n,
+  ~CS8,
+  nb_deplacements_w,
+  svyquantile,
+  quantiles = c(0.1, 0.25, 0.5, 0.75, .9),
+  ci = TRUE,
+  vartype= "ci"
+)
+```
+
+Calcul des coefficients de Gini
+```{r, message=FALSE}
+library(convey)
+nb_deplacements_cw <- convey_prep(nb_deplacements_w)
+nb_deplacements_gini <- svyby(~n, ~CS8, nb_deplacements_cw, svygini)
+```
+
+```{r, echo=FALSE}
+nb_deplacements_moyennes_table <- nb_deplacements_moyennes[1:2] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("Moyenne" = "n")
+
+nb_deplacements_quantiles_table <- nb_deplacements_quantiles[1:6] %>%
+  mutate_if(is.numeric, round, 1) %>%
+  rename("1er décile" = "0.1", "1er quartile" = "0.25", "Médiane" = "0.5", "3e quartile" = "0.75", "9e décile" = "0.9")
+
+nb_deplacements_gini_table <- nb_deplacements_gini[1:2] %>%
+  mutate_if(is.numeric, round, 3) %>%
+  rename("Coefficient de Gini" = "n")
+
+recap_nb_deplacements <- nb_deplacements_moyennes_table %>%
+  full_join(nb_deplacements_quantiles_table, by = c("CS8")) %>%
+  full_join(nb_deplacements_gini_table, by = c("CS8")) %>%
+  sjlabelled::copy_labels(nb_deplacements) %>%
+  label_to_colnames()
+
+knitr::kable(recap_nb_deplacements, caption = "Déplacements quotidiens par personne")
+```
+
+## Courbes de Lorenz
+
+Attention : pour l'instant, la pondération des données n'est pas prise en compte
+
+### Durée des déplacements
+
+```{r}
+library(gglorenz)
+
+ggplot(temps_subset_w$variables) +
+  stat_lorenz(aes(weight = weights(temps_subset_w), x = temps, colour = "Toutes les PCS"), color = "black", linetype = "dotted", desc = FALSE) +
+  stat_lorenz(aes(weight = weights(temps_subset_w), x = temps, colour = CS8), desc = FALSE) +
+  coord_fixed() +
+  geom_abline(linetype = "dashed") +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  labs(x = "Part cumulée des individus",
+       y = "Part cumulée de la durée des déplacements",
+       title = "Inégalités des temps de déplacement")
+```
+
+### Distances parcourues
+
+```{r}
+library(gglorenz)
+
+ggplot(distance_subset_w$variables) +
+  stat_lorenz(aes(weight = weights(distance_subset_w), x = distance, colour = CS8), desc = FALSE) +
+  coord_fixed() +
+  geom_abline(linetype = "dashed") +
+  scale_colour_discrete(name  = sjlabelled::get_label(distance_subset$CS8)) +
+  labs(x = "Part cumulée des individus",
+       y = "Part cumulée des distances parcourues",
+       title = "Inégalités des distances parcourues")
+```
+
+### Nombre de déplacements
+
+```{r}
+library(gglorenz)
+
+ggplot(nb_deplacements_subset_w$variables) +
+  stat_lorenz(aes(weight = weights(nb_deplacements_subset_w), x = n, colour = CS8), desc = FALSE) +
+  coord_fixed() +
+  geom_abline(linetype = "dashed") +
+  scale_colour_discrete(name  = sjlabelled::get_label(nb_deplacements_subset_w$CS8)) +
+  labs(x = "Part cumulée des individus",
+       y = "Part cumulée du nombre de déplacements quotidiens",
+       title = "Inégalités du nombre de déplacements quotidiens")
+```
+
+## Forme des distributions
+
+### Durée des déplacements
+
+```{r}
+ggplot(temps_subset_w$variables, aes(
+  weight = weights(temps_subset_w),
+  x = temps / 60,
+  color = CS8,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 4, 1), seq(5, 15, 2)),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution de la durée quotidienne des déplacements, par personne",
+    x = "Durée quotidienne des déplacements (en heures)",
+    y = "Fréquence"
+  )
+```
+
+```{r}
+ggplot(temps_subset_w$variables, aes(
+  weight = weights(temps_subset_w),
+  x = temps / 60,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, position = "fill", alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(temps_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 4, 1), seq(5, 15, 2)),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  scale_y_continuous(
+    breaks = c(0, 0.33, 0.66, 1),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution relative de la durée quotidienne des déplacements, par personne",
+    x = "Durée quotidienne des déplacements (en heures)",
+    y = "Fréquence relative"
+  )
+```
+
+### Distances parcourues
+
+```{r}
+ggplot(distance_subset_w$variables, aes(
+  weight = weights(distance_subset_w),
+  x = distance,
+  color = CS8,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(distance_subset$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(distance_subset$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 100, 10), 150, 200),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution des distances parcourues quotidiennement par personne",
+    x = sjlabelled::get_label(distance_subset$distance),
+    y = "Fréquence"
+  )
+```
+
+```{r}
+ggplot(distance_subset_w$variables, aes(
+  weight = weights(distance_subset_w),
+  x = distance,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, position = "fill", alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(distance_subset$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(distance_subset$CS8)) +
+  scale_x_continuous(
+    breaks = c(seq(0, 100, 10), 150, 200),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  scale_y_continuous(
+    breaks = c(0, 0.33, 0.66, 1),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution relative des distances parcourues quotidiennement par personne",
+    x = sjlabelled::get_label(distance_subset$distance),
+    y = "Fréquence relative"
+  )
+```
+
+### Nombre de déplacements
+
+```{r}
+ggplot(nb_deplacements_subset_w$variables, aes(
+  weight = weights(nb_deplacements_subset_w),
+  x = n,
+  color = CS8,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(nb_deplacements_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(nb_deplacements_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = seq(0, 22, 2),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution du nombre de déplacements quotidiens par personne",
+    x = sjlabelled::get_label(nb_deplacements_subset$n),
+    y = "Fréquence"
+  )
+```
+
+```{r}
+ggplot(nb_deplacements_subset_w$variables, aes(
+  weight = weights(nb_deplacements_subset_w),
+  x = n,
+  fill = CS8
+)) +
+  geom_density(adjust=1.5, position = "fill", alpha = .4) +
+  scale_colour_discrete(name  = sjlabelled::get_label(nb_deplacements_subset_w$CS8)) +
+  scale_fill_discrete(name  = sjlabelled::get_label(nb_deplacements_subset_w$CS8)) +
+  scale_x_continuous(
+    breaks = seq(0, 22, 2),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  scale_y_continuous(
+    breaks = c(0, 0.33, 0.66, 1),
+    minor_breaks = waiver(),
+    sec.axis = dup_axis(name = NULL)
+  ) +
+  labs(
+    title = "Distribution relative du nombre de déplacements quotidiens par personne",
+    x = sjlabelled::get_label(nb_deplacements_subset$n),
+    y = "Fréquence relative"
+  )
+```
+

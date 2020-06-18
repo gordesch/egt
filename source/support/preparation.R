@@ -6,6 +6,7 @@ library(haven)
 library(sjlabelled)
 library(viridis)
 library(tidyverse)
+library(survey)
 
 # Viridis colors as default for ggplot2 : easier to read by those with colorblindness, and print well in grey scale.
 options(ggplot2.continuous.colour="viridis")
